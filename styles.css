@@ -259,6 +259,31 @@ h3 {
   place-items: center;
 }
 
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.qty-stepper b {
+  min-width: 18px;
+  text-align: center;
+  color: var(--ink);
+}
+
+.step-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .stage-wrap {
   padding: 14px;
 }

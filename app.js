@@ -159,11 +159,42 @@ function allocatedElsewhere(typeId, exceptOrderId) {
   }, 0);
 }
 
-// 某枚字模当前还可分给某订单的数量
+// 版面上已落下的字同样占用字模
+function boardUsage(typeId) {
+  return getUsage()[typeId] || 0;
+}
+
+// 某枚字模当前还可分给某订单的数量 = 库存 - 版面落字 - 他单占用
 function availableFor(typeId, exceptOrderId) {
   const item = state.inventory.find((entry) => entry.id === typeId);
   if (!item) return 0;
-  return Math.max(0, item.quantity - allocatedElsewhere(typeId, exceptOrderId));
+  return Math.max(0, item.quantity - boardUsage(typeId) - allocatedElsewhere(typeId, exceptOrderId));
+}
+
+// 库存数量变化、字模移除或版面落字变化后，重核算所有未完成订单：
+// 按优先级（高→低，同优先级按交期）依次确认占用，超出可用量的分配一律削减，
+// 保证任何订单都不会"显示充足却实际超用"，也不会两单重复占用同一批字模。
+function reconcileAllocations() {
+  const board = getUsage();
+  const held = {};
+  let changed = false;
+  const active = sortedOrders().filter((order) => holdsStock(order));
+  for (const order of active) {
+    for (const [typeId, qty] of Object.entries(order.allocations)) {
+      const item = state.inventory.find((entry) => entry.id === typeId);
+      const stock = item ? item.quantity : 0;
+      const max = Math.max(0, stock - (board[typeId] || 0) - (held[typeId] || 0));
+      if (qty > max) {
+        changed = true;
+        if (max <= 0) delete order.allocations[typeId];
+        else order.allocations[typeId] = max;
+      }
+    }
+    for (const [typeId, qty] of Object.entries(order.allocations)) {
+      held[typeId] = (held[typeId] || 0) + qty;
+    }
+  }
+  return changed;
 }
 
 function orderDemand(order) {
@@ -230,9 +261,19 @@ function transitionOrder(order, to) {
       notify("订单没有正文内容，无法开工", "warn");
       return;
     }
+    // 重新进入生产前，按当前库存、版面落字和他单占用重新核对
+    reconcileAllocations();
     const shortages = computeShortages(order);
     if (shortages.length > 0) {
-      notify(`仍有 ${shortages.length} 项缺字/缺量（如「${shortages[0].char}」缺${shortages[0].missing}枚），无法开工`, "warn");
+      const preview = shortages
+        .slice(0, 3)
+        .map((entry) => `「${entry.char}」缺${entry.missing}枚`)
+        .join("、");
+      notify(
+        `库存不足，留在「${ORDER_STATUS[from].label}」：${preview}${shortages.length > 3 ? " 等" : ""}，详见补齐清单`,
+        "warn"
+      );
+      renderAll();
       return;
     }
   }
@@ -286,6 +327,11 @@ function renderInventory() {
           <div class="type-meta">
             <strong>${escapeHtml(item.char)} · ${escapeHtml(item.style)}</strong>
             <span>${item.size}px · ${escapeHtml(item.wear)} · 版面已用${used}/${item.quantity}${reserved ? ` · 订单占用${reserved}` : ""}</span>
+            <span class="qty-stepper" data-stop-select>库存
+              <button type="button" class="step-btn" data-dec-type="${item.id}" title="减少库存">−</button>
+              <b>${item.quantity}</b>
+              <button type="button" class="step-btn" data-inc-type="${item.id}" title="增加库存">＋</button>
+            </span>
           </div>
           <button class="mini-btn" title="删除字模" data-delete-type="${item.id}" type="button">×</button>
         </article>
@@ -446,15 +492,18 @@ function renderOrderDetail() {
 
   const demandChars = new Set(Object.keys(demand));
   const rows = state.inventory.filter((item) => demandChars.has(item.char));
+  const usage = getUsage();
   const allocRows = rows
     .map((item) => {
       const mine = order.allocations[item.id] || 0;
+      const onBoard = usage[item.id] || 0;
       const others = allocatedElsewhere(item.id, order.id);
-      const max = Math.max(0, item.quantity - others);
+      const max = Math.max(0, item.quantity - onBoard - others);
       return `
         <tr>
           <td><strong>${escapeHtml(item.char)}</strong> · ${escapeHtml(item.style)} · ${item.size}px</td>
           <td>${item.quantity}</td>
+          <td>${onBoard}</td>
           <td>${others}</td>
           <td>
             <input class="alloc-input" type="number" min="0" max="${max}" value="${mine}"
@@ -532,7 +581,7 @@ function renderOrderDetail() {
     ${
       rows.length
         ? `<table class="alloc-table">
-            <thead><tr><th>字模</th><th>库存</th><th>他单占用</th><th>本单分配</th><th>可调上限</th></tr></thead>
+            <thead><tr><th>字模</th><th>库存</th><th>版面占用</th><th>他单占用</th><th>本单分配</th><th>可调上限</th></tr></thead>
             <tbody>${allocRows}</tbody>
           </table>`
         : `<p class="empty">正文中的字在字库中还没有任何字模。</p>`
@@ -560,6 +609,9 @@ function renderView() {
 }
 
 function renderAll() {
+  if (reconcileAllocations()) {
+    notify("库存或版面占用有变化，已重新核算所有未完成订单的分配", "info");
+  }
   saveState();
   renderView();
   renderSettings();
@@ -725,12 +777,14 @@ function deleteOrder(orderId) {
 function adjustAllocation(order, typeId, rawValue, inputEl) {
   const item = state.inventory.find((entry) => entry.id === typeId);
   if (!item) return;
-  const max = Math.max(0, item.quantity - allocatedElsewhere(typeId, order.id));
+  const onBoard = boardUsage(typeId);
+  const others = allocatedElsewhere(typeId, order.id);
+  const max = Math.max(0, item.quantity - onBoard - others);
   let value = Number.parseInt(rawValue, 10);
   if (Number.isNaN(value) || value < 0) value = 0;
   if (value > max) {
     notify(
-      `「${item.char}」最多只能分 ${max} 枚（库存${item.quantity}，他单占用${allocatedElsewhere(typeId, order.id)}），不能超用`,
+      `「${item.char}」最多只能分 ${max} 枚（库存${item.quantity}，版面占用${onBoard}，他单占用${others}），不能超用`,
       "warn"
     );
     value = max;
@@ -827,6 +881,22 @@ els.typeList.addEventListener("click", (event) => {
     });
     if (state.selectedTypeId === typeId) state.selectedTypeId = state.inventory[0]?.id || null;
     notify(`字模「${item?.char ?? ""}」已删除，相关订单分配同步移除`, "ok");
+    renderAll();
+    return;
+  }
+  const stepButton = event.target.closest("[data-inc-type], [data-dec-type]");
+  if (stepButton) {
+    const typeId = stepButton.dataset.incType || stepButton.dataset.decType;
+    const item = state.inventory.find((entry) => entry.id === typeId);
+    if (!item) return;
+    const delta = stepButton.dataset.incType ? 1 : -1;
+    const next = Math.min(99, Math.max(1, item.quantity + delta));
+    if (next === item.quantity) {
+      notify(`「${item.char}」库存范围 1–99，不能再${delta > 0 ? "加" : "减"}`, "info");
+      return;
+    }
+    item.quantity = next;
+    notify(`「${item.char}」库存调整为 ${next}，订单分配已重新核算`, "ok");
     renderAll();
     return;
   }
