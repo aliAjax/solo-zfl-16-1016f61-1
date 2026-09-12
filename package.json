@@ -1,0 +1,9 @@
+{
+  "name": "movable-type-workshop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地活字排版工坊：字模库、版面落字、多订单生产工作台",
+  "scripts": {
+    "test": "node tests/run.js"
+  }
+}
