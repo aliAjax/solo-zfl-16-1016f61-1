@@ -13,89 +13,139 @@
           <p class="eyebrow">本地活字印章排版</p>
           <h1>活字排版工坊</h1>
         </div>
-        <div class="top-actions">
+        <nav class="view-tabs" aria-label="视图切换">
+          <button id="editorTab" class="tab" type="button">排版工坊</button>
+          <button id="ordersTab" class="tab" type="button">生产订单 <span id="orderTabBadge" class="tab-badge" hidden></span></button>
+        </nav>
+        <div class="top-actions" id="editorActions">
           <button id="saveDraftBtn" class="primary">保存草稿</button>
           <button id="exportBtn">导出预览图</button>
           <button id="clearBoardBtn">清空版面</button>
         </div>
       </header>
 
-      <section class="settings-bar" aria-label="版面设置">
-        <label>
-          纸张
-          <select id="paperSize">
-            <option value="postcard">明信片</option>
-            <option value="bookmark">书签</option>
-            <option value="square">方形小笺</option>
-          </select>
-        </label>
-        <label>
-          方向
-          <select id="flowMode">
-            <option value="horizontal">横排</option>
-            <option value="vertical">竖排</option>
-          </select>
-        </label>
-        <label>
-          网格
-          <input id="gridGap" type="range" min="4" max="18" value="8" />
-        </label>
-        <label>
-          作品名
-          <input id="workTitle" type="text" placeholder="例：晚风小笺" />
-        </label>
-      </section>
-
-      <section class="workspace">
-        <aside class="panel inventory-panel">
-          <div class="panel-head">
-            <h2>字模库</h2>
-            <span id="inventoryCount"></span>
-          </div>
-          <form id="typeForm" class="type-form">
-            <input id="charInput" maxlength="2" placeholder="字" required />
-            <input id="styleInput" placeholder="风格" required />
-            <input id="sizeInput" type="number" min="8" max="72" value="24" required />
-            <input id="quantityInput" type="number" min="1" max="99" value="3" required />
-            <select id="wearInput">
-              <option value="新">新</option>
-              <option value="微磨">微磨</option>
-              <option value="旧痕">旧痕</option>
+      <div id="editorView">
+        <section class="settings-bar" aria-label="版面设置">
+          <label>
+            纸张
+            <select id="paperSize">
+              <option value="postcard">明信片</option>
+              <option value="bookmark">书签</option>
+              <option value="square">方形小笺</option>
             </select>
-            <button class="primary" type="submit">加入</button>
-          </form>
-          <div class="filter-row">
-            <input id="inventorySearch" type="search" placeholder="搜索字或风格" />
-            <select id="styleFilter">
-              <option value="all">全部风格</option>
+          </label>
+          <label>
+            方向
+            <select id="flowMode">
+              <option value="horizontal">横排</option>
+              <option value="vertical">竖排</option>
             </select>
-          </div>
-          <div id="typeList" class="type-list"></div>
-        </aside>
-
-        <section class="stage-wrap">
-          <div class="status-strip">
-            <div>
-              <strong id="selectedTypeLabel">未选择字模</strong>
-              <span>点击字模后，在版面格子中落字，也可拖拽字模到版面。</span>
-            </div>
-            <div id="shortageBadge" class="badge ok">数量充足</div>
-          </div>
-          <div id="stage" class="stage" aria-label="排版画布"></div>
+          </label>
+          <label>
+            网格
+            <input id="gridGap" type="range" min="4" max="18" value="8" />
+          </label>
+          <label>
+            作品名
+            <input id="workTitle" type="text" placeholder="例：晚风小笺" />
+          </label>
         </section>
 
-        <aside class="panel draft-panel">
-          <div class="panel-head">
-            <h2>草稿与核对</h2>
-            <span id="placedCount"></span>
-          </div>
-          <div id="usageList" class="usage-list"></div>
-          <div class="divider"></div>
-          <h3>已保存草稿</h3>
-          <div id="draftList" class="draft-list"></div>
-        </aside>
-      </section>
+        <section class="workspace">
+          <aside class="panel inventory-panel">
+            <div class="panel-head">
+              <h2>字模库</h2>
+              <span id="inventoryCount"></span>
+            </div>
+            <form id="typeForm" class="type-form">
+              <input id="charInput" maxlength="2" placeholder="字" required />
+              <input id="styleInput" placeholder="风格" required />
+              <input id="sizeInput" type="number" min="8" max="72" value="24" required />
+              <input id="quantityInput" type="number" min="1" max="99" value="3" required />
+              <select id="wearInput">
+                <option value="新">新</option>
+                <option value="微磨">微磨</option>
+                <option value="旧痕">旧痕</option>
+              </select>
+              <button class="primary" type="submit">加入</button>
+            </form>
+            <div class="filter-row">
+              <input id="inventorySearch" type="search" placeholder="搜索字或风格" />
+              <select id="styleFilter">
+                <option value="all">全部风格</option>
+              </select>
+            </div>
+            <div id="typeList" class="type-list"></div>
+          </aside>
+
+          <section class="stage-wrap">
+            <div class="status-strip">
+              <div>
+                <strong id="selectedTypeLabel">未选择字模</strong>
+                <span>点击字模后，在版面格子中落字，也可拖拽字模到版面。</span>
+              </div>
+              <div id="shortageBadge" class="badge ok">数量充足</div>
+            </div>
+            <div id="stage" class="stage" aria-label="排版画布"></div>
+          </section>
+
+          <aside class="panel draft-panel">
+            <div class="panel-head">
+              <h2>草稿与核对</h2>
+              <span id="placedCount"></span>
+            </div>
+            <div id="usageList" class="usage-list"></div>
+            <div class="divider"></div>
+            <h3>已保存草稿</h3>
+            <div id="draftList" class="draft-list"></div>
+          </aside>
+        </section>
+      </div>
+
+      <div id="ordersView" hidden>
+        <section class="orders-layout">
+          <aside class="panel orders-side">
+            <div class="panel-head">
+              <h2>生产订单</h2>
+              <span id="orderCount"></span>
+            </div>
+            <form id="orderForm" class="order-form">
+              <input id="orderTitle" type="text" placeholder="订单名称，例：茶馆菜单" required />
+              <div class="order-form-grid">
+                <label>交期<input id="orderDue" type="date" required /></label>
+                <label>优先级
+                  <select id="orderPriority">
+                    <option value="high">高</option>
+                    <option value="medium" selected>中</option>
+                    <option value="low">低</option>
+                  </select>
+                </label>
+                <label>纸张
+                  <select id="orderPaper">
+                    <option value="postcard">明信片</option>
+                    <option value="bookmark">书签</option>
+                    <option value="square">方形小笺</option>
+                  </select>
+                </label>
+                <label>排版
+                  <select id="orderFlow">
+                    <option value="horizontal">横排</option>
+                    <option value="vertical">竖排</option>
+                  </select>
+                </label>
+              </div>
+              <textarea id="orderText" rows="3" placeholder="正文内容（系统按字核算字模用量）" required></textarea>
+              <button class="primary" type="submit">创建订单</button>
+            </form>
+            <div id="orderList" class="order-list"></div>
+          </aside>
+
+          <section class="panel order-detail" id="orderDetail"></section>
+        </section>
+      </div>
     </main>
+
+    <div id="toast" class="toast" hidden></div>
 
     <script src="app.js"></script>
   </body>

@@ -397,12 +397,376 @@ h3 {
   margin: 14px 0;
 }
 
+/* ---------- 视图切换 ---------- */
+
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 250, 241, 0.86);
+  padding: 4px;
+}
+
+.view-tabs .tab {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  padding: 8px 18px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.view-tabs .tab:hover {
+  transform: none;
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.view-tabs .tab.active {
+  background: var(--ink);
+  color: #fffaf1;
+}
+
+.tab-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 12px;
+  padding: 0 5px;
+}
+
+/* ---------- 订单工作台 ---------- */
+
+.orders-layout {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.order-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.order-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.order-form-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.order-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 10px 11px;
+  font: inherit;
+  resize: vertical;
+  outline: none;
+}
+
+.order-form textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(54, 95, 125, 0.15);
+}
+
+.order-list {
+  display: grid;
+  gap: 8px;
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.order-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.order-card:hover {
+  border-color: var(--blue);
+}
+
+.order-card.selected {
+  border-color: var(--red);
+  box-shadow: inset 0 0 0 2px rgba(164, 64, 55, 0.15);
+}
+
+.order-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-card-meta,
+.order-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.order-card-foot {
+  justify-content: space-between;
+}
+
+.chip {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.chip.gold { background: var(--gold); }
+.chip.blue { background: var(--blue); }
+.chip.green { background: var(--green); }
+.chip.red { background: var(--red); }
+.chip.prio-high { background: var(--red); }
+.chip.prio-medium { background: var(--blue); }
+.chip.prio-low { background: var(--muted); }
+
+/* ---------- 订单详情 ---------- */
+
+.order-detail {
+  min-height: 480px;
+}
+
+.detail-empty {
+  display: grid;
+  place-content: center;
+  min-height: 320px;
+  text-align: center;
+}
+
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-head h2 {
+  margin-bottom: 6px;
+  font-size: 24px;
+}
+
+.mini-btn.danger {
+  color: var(--red);
+  border-color: rgba(164, 64, 55, 0.4);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.detail-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 8px 10px;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detail-grid dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+
+.order-text {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.7);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 0;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.alloc-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.alloc-table th,
+.alloc-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.alloc-table th {
+  background: rgba(217, 202, 182, 0.3);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.alloc-table tr:last-child td {
+  border-bottom: none;
+}
+
+.alloc-input {
+  width: 76px;
+  padding: 6px 8px;
+}
+
+.shortage-list {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+
+.shortage-list li {
+  color: var(--red);
+}
+
+.shortage-list strong {
+  font-size: 16px;
+}
+
+.ok-line {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0 14px;
+}
+
+.status-flow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-btn {
+  border-width: 2px;
+  font-weight: 800;
+}
+
+.status-btn.gold { border-color: var(--gold); color: var(--gold); }
+.status-btn.blue { border-color: var(--blue); color: var(--blue); }
+.status-btn.green { border-color: var(--green); color: var(--green); }
+.status-btn.red { border-color: var(--red); color: var(--red); }
+
+.status-btn.current {
+  color: #fff;
+}
+
+.status-btn.current.gold { background: var(--gold); }
+.status-btn.current.blue { background: var(--blue); }
+.status-btn.current.green { background: var(--green); }
+.status-btn.current.red { background: var(--red); }
+
+.history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.history-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-left: 3px solid var(--line);
+  background: #fffdf8;
+  border-radius: 0 8px 8px 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.history-list li span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- 提示条 ---------- */
+
+.toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  max-width: min(560px, calc(100vw - 40px));
+  border-radius: 8px;
+  padding: 12px 18px;
+  color: #fff;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+}
+
+.toast.info { background: var(--blue); }
+.toast.ok { background: var(--green); }
+.toast.warn { background: var(--red); }
+
 @media (max-width: 1120px) {
   .workspace {
     grid-template-columns: 1fr;
   }
 
   .type-list {
+    max-height: none;
+  }
+
+  .orders-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .order-list {
     max-height: none;
   }
 }
