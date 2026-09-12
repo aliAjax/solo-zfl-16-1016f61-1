@@ -180,27 +180,51 @@ function availableFor(typeId, exceptOrderId) {
 // 按优先级（高→低，同优先级按交期）依次确认占用，超出可用量的分配一律削减，
 // 保证任何订单都不会"显示充足却实际超用"，也不会两单重复占用同一批字模。
 // 库存不够时只能保留真实缺口：reconcile 只削减不超用，绝不补到满配。
-function reconcileAllocations() {
+// 削减同样生成调整记录（时间、原因、前后数量），与重排记录一致、可撤销。
+function reconcileAllocations(reason, extraLabels = {}) {
   const board = getUsage();
   const held = {};
-  let changed = false;
+  const changes = [];
   const active = sortedOrders().filter((order) => holdsStock(order));
   for (const order of active) {
+    let before = null;
     for (const [typeId, qty] of Object.entries(order.allocations)) {
       const item = state.inventory.find((entry) => entry.id === typeId);
       const stock = item ? item.quantity : 0;
       const max = Math.max(0, stock - (board[typeId] || 0) - (held[typeId] || 0));
       if (qty > max) {
-        changed = true;
+        if (!before) before = { ...order.allocations };
         if (max <= 0) delete order.allocations[typeId];
         else order.allocations[typeId] = max;
       }
+    }
+    if (before) {
+      const typeIds = new Set([...Object.keys(before), ...Object.keys(order.allocations)]);
+      const items = [...typeIds]
+        .map((typeId) => {
+          const item = state.inventory.find((entry) => entry.id === typeId) || extraLabels[typeId];
+          const b = before[typeId] || 0;
+          const a = order.allocations[typeId] || 0;
+          if (a === b) return null;
+          return { typeId, char: item?.char ?? "?", style: item?.style ?? "已删除", before: b, after: a };
+        })
+        .filter(Boolean);
+      changes.push({ orderId: order.id, orderTitle: order.title, before, after: { ...order.allocations }, items });
     }
     for (const [typeId, qty] of Object.entries(order.allocations)) {
       held[typeId] = (held[typeId] || 0) + qty;
     }
   }
-  return changed;
+  if (changes.length) {
+    state.replans.unshift({
+      id: crypto.randomUUID(),
+      at: new Date().toISOString(),
+      reason: reason || "库存或版面变化，自动重核算",
+      changes
+    });
+    state.replans = state.replans.slice(0, 20);
+  }
+  return changes.length > 0;
 }
 
 /* ---------- 全工坊库存重排 ---------- */
@@ -271,36 +295,96 @@ function replanAllocations(reason) {
   return changes;
 }
 
-// 版面落字减少（释放字模）时触发重排
-function replanIfBoardFreed(beforeUsage, reason) {
+// 版面落字变化后：占用增加要削减（生成记录），释放要重排
+function reaccountAfterBoardChange(beforeUsage, reasons) {
   const after = getUsage();
-  const freed = Object.keys(beforeUsage).some((typeId) => (after[typeId] || 0) < beforeUsage[typeId]);
-  if (freed) replanAllocations(reason);
+  const typeIds = new Set([...Object.keys(beforeUsage), ...Object.keys(after)]);
+  let increased = false;
+  let freed = false;
+  for (const typeId of typeIds) {
+    const diff = (after[typeId] || 0) - (beforeUsage[typeId] || 0);
+    if (diff > 0) increased = true;
+    if (diff < 0) freed = true;
+  }
+  if (increased) reconcileAllocations(reasons.increased);
+  if (freed) replanAllocations(reasons.freed);
 }
 
+// 撤销最近一次重排：按当前锁定量（版面落字 + 制作中占用 + 他单持有）判断能否完整恢复。
+// 能完整恢复才标记已撤销；只能部分恢复时恢复可恢复的单，并在记录里标明未恢复的单。
 function undoLastReplan() {
   const event = state.replans.find((entry) => !entry.undoneAt);
   if (!event) {
     notify("没有可撤销的重排", "info");
     return;
   }
-  let restored = 0;
-  const skipped = [];
+
+  // 当前全工坊占用快照：版面 + 所有未完成订单持有量
+  const held = {};
+  const addHeld = (typeId, qty) => {
+    held[typeId] = (held[typeId] || 0) + qty;
+  };
+  for (const [typeId, qty] of Object.entries(getUsage())) addHeld(typeId, qty);
+  for (const order of state.orders) {
+    if (!holdsStock(order)) continue;
+    for (const [typeId, qty] of Object.entries(order.allocations)) addHeld(typeId, qty);
+  }
+
+  const restored = [];
+  const unrestored = [];
   for (const change of event.changes) {
     const order = getOrder(change.orderId);
-    // 已开工（制作中）或已完成/已删除的订单保持不动，不强行回滚
-    if (!order || order.status === "making" || order.status === "done") {
-      skipped.push(change.orderTitle);
+    if (!order) {
+      unrestored.push({ orderId: change.orderId, title: change.orderTitle, reason: "订单已删除" });
       continue;
     }
-    order.allocations = { ...change.before };
-    restored += 1;
+    if (order.status === "making" || order.status === "done") {
+      unrestored.push({
+        orderId: order.id,
+        title: order.title,
+        reason: `已${ORDER_STATUS[order.status].label}，保持不动`
+      });
+      continue;
+    }
+    // 先释放该单当前占用，再判断调整前数量能否完整放回
+    for (const [typeId, qty] of Object.entries(order.allocations)) {
+      held[typeId] = (held[typeId] || 0) - qty;
+    }
+    const fits = Object.entries(change.before).every(([typeId, qty]) => {
+      const item = state.inventory.find((entry) => entry.id === typeId);
+      const stock = item ? item.quantity : 0;
+      return (held[typeId] || 0) + qty <= stock;
+    });
+    if (fits) {
+      order.allocations = { ...change.before };
+      for (const [typeId, qty] of Object.entries(order.allocations)) addHeld(typeId, qty);
+      restored.push(order.title);
+    } else {
+      // 放不回就保持现状，绝不超过当前可用量
+      for (const [typeId, qty] of Object.entries(order.allocations)) addHeld(typeId, qty);
+      unrestored.push({ orderId: order.id, title: order.title, reason: "当前库存不足，无法完整恢复" });
+    }
   }
-  event.undoneAt = new Date().toISOString();
-  notify(
-    `已撤销重排「${event.reason}」：恢复 ${restored} 单${skipped.length ? `，跳过 ${skipped.length} 单（已开工或已删除）` : ""}`,
-    "ok"
-  );
+
+  if (unrestored.length === 0) {
+    event.undoneAt = new Date().toISOString();
+    delete event.partialUndo;
+    notify(`已撤销重排「${event.reason}」：恢复 ${restored.length} 单`, "ok");
+  } else if (restored.length > 0) {
+    // 部分恢复：事件不标已撤销，记录哪些单没恢复，页面持久展示
+    event.partialUndo = { at: new Date().toISOString(), unrestored };
+    notify(
+      `部分恢复：已还原 ${restored.length} 单；未恢复 ${unrestored.map((entry) => `「${entry.title}」`).join("、")}，事件保持未撤销`,
+      "warn"
+    );
+  } else {
+    notify(
+      `无法撤销「${event.reason}」：${unrestored.map((entry) => `「${entry.title}」${entry.reason}`).join("；")}`,
+      "warn"
+    );
+    renderAll();
+    return;
+  }
   renderAll();
 }
 
@@ -403,8 +487,14 @@ function transitionOrder(order, to) {
   order.status = to;
   order.history.push({ at: new Date().toISOString(), from, to });
   if (to === "done") {
+    // 完成即拆版还字：清空占用，绝不显示完成却保留旧分配
+    order.allocations = {};
     replanAllocations(`订单「${order.title}」完成，释放字模`);
     notify(`「${order.title}」已完成，占用字模已释放回库存`, "ok");
+  } else if (to === "rework") {
+    // 返工重新参与分配，按当前库存重新核对
+    replanAllocations(`订单「${order.title}」返工，重新核算`);
+    notify(`「${order.title}」${ORDER_STATUS[from].label} → ${ORDER_STATUS[to].label}`, "ok");
   } else {
     notify(`「${order.title}」${ORDER_STATUS[from].label} → ${ORDER_STATUS[to].label}`, "ok");
   }
@@ -681,6 +771,15 @@ function renderOrderDetail() {
         ${orderReplans
           .map((event) => {
             const change = event.changes.find((entry) => entry.orderId === order.id);
+            let statusNote = "";
+            if (event.undoneAt) {
+              statusNote = `<em>已于 ${formatTime(event.undoneAt)} 撤销</em>`;
+            } else if (event.partialUndo) {
+              const missed = event.partialUndo.unrestored.find((entry) => entry.orderId === order.id);
+              statusNote = missed
+                ? `<em class="missed">部分恢复于 ${formatTime(event.partialUndo.at)}：本单未恢复（${escapeHtml(missed.reason)}）</em>`
+                : `<em>部分恢复于 ${formatTime(event.partialUndo.at)}：本单已还原</em>`;
+            }
             return `
           <li class="${event.undoneAt ? "undone" : ""}">
             <span>${formatTime(event.at)}</span>
@@ -689,7 +788,7 @@ function renderOrderDetail() {
               <div class="replan-items">${change.items
                 .map((item) => `「${escapeHtml(item.char)}」${escapeHtml(item.style)} ${item.before}→${item.after}`)
                 .join("；")}</div>
-              ${event.undoneAt ? `<em>已于 ${formatTime(event.undoneAt)} 撤销</em>` : ""}
+              ${statusNote}
             </div>
           </li>`;
           })
@@ -761,14 +860,19 @@ function renderReplanLog() {
   els.replanLog.innerHTML =
     state.replans
       .slice(0, 6)
-      .map(
-        (event) => `
-        <article class="replan-item ${event.undoneAt ? "undone" : ""}">
+      .map((event) => {
+        const status = event.undoneAt
+          ? " · 已撤销"
+          : event.partialUndo
+            ? ` · 部分恢复，未恢复：${event.partialUndo.unrestored.map((entry) => `「${entry.title}」`).join("、")}`
+            : "";
+        return `
+        <article class="replan-item ${event.undoneAt ? "undone" : event.partialUndo ? "partial" : ""}">
           <strong>${escapeHtml(event.reason)}</strong>
-          <span>${formatTime(event.at)} · 调整${event.changes.length}单${event.undoneAt ? " · 已撤销" : ""}</span>
+          <span>${formatTime(event.at)} · 调整${event.changes.length}单${status}</span>
         </article>
-      `
-      )
+      `;
+      })
       .join("") || `<p class="empty">还没有重排记录。</p>`;
   els.undoReplanBtn.disabled = !state.replans.some((event) => !event.undoneAt);
 }
@@ -814,7 +918,7 @@ function placeType(row, col, typeId = state.selectedTypeId) {
   } else {
     state.placements.push({ row, col, typeId });
   }
-  replanIfBoardFreed(beforeUsage, "版面落字释放");
+  reaccountAfterBoardChange(beforeUsage, { increased: "版面落字占用增加", freed: "版面落字释放" });
   renderAll();
 }
 
@@ -1017,7 +1121,7 @@ els.paperSize.addEventListener("change", () => {
   state.settings.paperSize = els.paperSize.value;
   const { cols, rows } = getGrid();
   state.placements = state.placements.filter((item) => item.row < rows && item.col < cols);
-  replanIfBoardFreed(beforeUsage, "切换纸张，版面释放字模");
+  reaccountAfterBoardChange(beforeUsage, { increased: "切换纸张，版面占用增加", freed: "切换纸张，版面释放字模" });
   renderAll();
 });
 
@@ -1052,37 +1156,48 @@ els.clearBoardBtn.addEventListener("click", () => {
   renderAll();
 });
 
+function changeTypeQuantity(typeId, delta) {
+  const item = state.inventory.find((entry) => entry.id === typeId);
+  if (!item) return;
+  const next = Math.min(99, Math.max(1, item.quantity + delta));
+  if (next === item.quantity) {
+    notify(`「${item.char}」库存范围 1–99，不能再${delta > 0 ? "加" : "减"}`, "info");
+    return;
+  }
+  const prev = item.quantity;
+  item.quantity = next;
+  if (delta > 0) {
+    replanAllocations(`「${item.char}」库存回升 ${prev}→${next}`);
+  } else {
+    // 下调导致的削减也会生成带前后数量的调整记录
+    reconcileAllocations(`「${item.char}」库存下调 ${prev}→${next}`);
+  }
+  notify(`「${item.char}」库存调整为 ${next}，订单分配已重新核算`, "ok");
+  renderAll();
+}
+
+function deleteType(typeId) {
+  const item = state.inventory.find((entry) => entry.id === typeId);
+  state.inventory = state.inventory.filter((entry) => entry.id !== typeId);
+  state.placements = state.placements.filter((entry) => entry.typeId !== typeId);
+  if (state.selectedTypeId === typeId) state.selectedTypeId = state.inventory[0]?.id || null;
+  // 不直接清各单分配，交给重核算削减并生成记录（字模标签用于已删字模的显示）
+  reconcileAllocations(`移除字模「${item?.char ?? ""}」`, {
+    [typeId]: { char: item?.char ?? "?", style: item?.style ?? "已删除" }
+  });
+  notify(`字模「${item?.char ?? ""}」已删除，相关订单分配同步削减`, "ok");
+  renderAll();
+}
+
 els.typeList.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-type]");
   if (deleteButton) {
-    const typeId = deleteButton.dataset.deleteType;
-    const item = state.inventory.find((entry) => entry.id === typeId);
-    state.inventory = state.inventory.filter((entry) => entry.id !== typeId);
-    state.placements = state.placements.filter((entry) => entry.typeId !== typeId);
-    state.orders.forEach((order) => {
-      delete order.allocations[typeId];
-    });
-    if (state.selectedTypeId === typeId) state.selectedTypeId = state.inventory[0]?.id || null;
-    notify(`字模「${item?.char ?? ""}」已删除，相关订单分配同步移除`, "ok");
-    renderAll();
+    deleteType(deleteButton.dataset.deleteType);
     return;
   }
   const stepButton = event.target.closest("[data-inc-type], [data-dec-type]");
   if (stepButton) {
-    const typeId = stepButton.dataset.incType || stepButton.dataset.decType;
-    const item = state.inventory.find((entry) => entry.id === typeId);
-    if (!item) return;
-    const delta = stepButton.dataset.incType ? 1 : -1;
-    const next = Math.min(99, Math.max(1, item.quantity + delta));
-    if (next === item.quantity) {
-      notify(`「${item.char}」库存范围 1–99，不能再${delta > 0 ? "加" : "减"}`, "info");
-      return;
-    }
-    const prev = item.quantity;
-    item.quantity = next;
-    if (delta > 0) replanAllocations(`「${item.char}」库存回升 ${prev}→${next}`);
-    notify(`「${item.char}」库存调整为 ${next}，订单分配已重新核算`, "ok");
-    renderAll();
+    changeTypeQuantity(stepButton.dataset.incType || stepButton.dataset.decType, stepButton.dataset.incType ? 1 : -1);
     return;
   }
   const card = event.target.closest("[data-type-id]");
@@ -1123,7 +1238,7 @@ els.draftList.addEventListener("click", (event) => {
     const beforeUsage = getUsage();
     state.settings = structuredClone(draft.settings);
     state.placements = structuredClone(draft.placements);
-    replanIfBoardFreed(beforeUsage, "载入草稿，版面释放字模");
+    reaccountAfterBoardChange(beforeUsage, { increased: "载入草稿，版面占用增加", freed: "载入草稿，版面释放字模" });
     notify(`草稿「${draft.title}」已载入`, "ok");
     renderAll();
   }
