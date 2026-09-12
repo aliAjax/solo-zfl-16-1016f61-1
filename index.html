@@ -137,6 +137,18 @@
               <textarea id="orderText" rows="3" placeholder="正文内容（系统按字核算字模用量）" required></textarea>
               <button class="primary" type="submit">创建订单</button>
             </form>
+            <div class="replan-panel">
+              <div class="panel-head">
+                <h2>库存重排</h2>
+                <span>制作中订单锁定</span>
+              </div>
+              <div class="replan-actions">
+                <button id="replanNowBtn" type="button">立即重排</button>
+                <button id="undoReplanBtn" type="button">撤销最近重排</button>
+              </div>
+              <div id="replanLog" class="replan-log"></div>
+            </div>
+            <div class="divider"></div>
             <div id="orderList" class="order-list"></div>
           </aside>
 
